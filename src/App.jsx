@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDGs4BhFI-S1Eknrh2SHw35ZOhS_dbh5Mc",
@@ -14,17 +15,37 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 
 const STAGES = ['Applied', 'CV Downloaded', 'Viewed', 'Interviewing', 'Offer', 'Rejected', 'Closed', 'Withdrawn', 'Ghosted'];
 const SOURCES = ['Jobstreet', 'Whatsapp', 'LinkedIn', 'Email', 'Company Site'];
 
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
   const [applications, setApplications] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const appsRef = collection(db, 'applications');
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser && currentUser.isAnonymous) {
+        signOut(auth);
+      } else {
+        setUser(currentUser);
+        setLoadingAuth(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setApplications([]);
+      return;
+    }
     
+    const appsRef = collection(db, 'users', user.uid, 'applications');
     const unsubscribe = onSnapshot(appsRef, (snapshot) => {
       const loadedApps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setApplications(loadedApps.sort((a, b) => new Date(b.date) - new Date(a.date)));
@@ -33,7 +54,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   const metrics = useMemo(() => {
     const total = applications.length;
@@ -90,7 +111,8 @@ export default function App() {
   };
 
   const updateAppInDb = async (id, dataToUpdate) => {
-    const docRef = doc(db, 'applications', id.toString());
+    if (!user) return;
+    const docRef = doc(db, 'users', user.uid, 'applications', id.toString());
     await setDoc(docRef, dataToUpdate, { merge: true });
   };
 
@@ -105,12 +127,14 @@ export default function App() {
   };
 
   const handleDelete = async (id) => {
+    if (!user) return;
     if (window.confirm('Yakin ingin menghapus data lamaran ini?')) {
-      await deleteDoc(doc(db, 'applications', id.toString()));
+      await deleteDoc(doc(db, 'users', user.uid, 'applications', id.toString()));
     }
   };
 
   const handleAddApplication = async () => {
+    if (!user) return;
     const newId = Date.now().toString();
     const newApp = {
       date: new Date().toISOString().split('T')[0],
@@ -125,16 +149,45 @@ export default function App() {
       note: ''
     };
     
-    const docRef = doc(db, 'applications', newId);
+    const docRef = doc(db, 'users', user.uid, 'applications', newId);
     await setDoc(docRef, newApp);
   };
+
+  if (loadingAuth) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-500">Memeriksa sesi...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200 text-center max-w-sm w-full">
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Job Tracker</h1>
+          <p className="text-gray-500 text-sm mb-6">Masuk untuk mengelola lamaran kerjamu.</p>
+          <button 
+            onClick={() => signInWithPopup(auth, provider)}
+            className="w-full bg-gray-900 text-white font-medium px-4 py-2 rounded hover:bg-gray-800 transition-colors"
+          >
+            Masuk dengan Google
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6 font-sans text-sm">
       <div className="max-w-7xl mx-auto space-y-6">
         
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-200">
-          <h1 className="text-xl font-semibold text-gray-900 mb-6">Pipeline Tracker</h1>
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-xl font-semibold text-gray-900">Pipeline Tracker</h1>
+            <button 
+              onClick={() => signOut(auth)}
+              className="text-gray-500 hover:text-gray-900 text-xs font-medium px-3 py-1 border border-gray-200 rounded hover:bg-gray-50"
+            >
+              Keluar ({user.email})
+            </button>
+          </div>
           
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-4 bg-gray-50 rounded-md border border-gray-100">
