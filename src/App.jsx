@@ -3,7 +3,6 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
 
-// GANTI DENGAN CONFIG FIREBASE-MU
 const firebaseConfig = {
   apiKey: "AIzaSyDGs4BhFI-S1Eknrh2SHw35ZOhS_dbh5Mc",
   authDomain: "jobtracker-rce.firebaseapp.com",
@@ -30,8 +29,12 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoadingAuth(false);
+      if (currentUser && currentUser.isAnonymous) {
+        signOut(auth);
+      } else {
+        setUser(currentUser);
+        setLoadingAuth(false);
+      }
     });
     return () => unsubscribe();
   }, []);
